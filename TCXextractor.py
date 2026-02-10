@@ -2,6 +2,10 @@ from lxml import etree
 import numpy as np
 from datetime import datetime
 import FITpreparator
+import os
+import ToFit
+import io
+import sys
 
 # namespaces
 ns = {
@@ -18,7 +22,7 @@ ns = {
 #print(test_sec)
 
 class lapcreator:
-    def __init__(self, tp):
+    def __init__(self, tp, age=33, weight=78, vo2max=45, gender="m"):
         self.StartTime = 0
         self.TotalTimeSeconds = 0
         self.DistanceMeters = 0
@@ -40,76 +44,58 @@ class lapcreator:
         self.Totaltrackpointkpi =[]
         self.kcalgenkomplet = []
         self.lapKPI = []
-        self.age = 33
-        self.weight = 78
-        self.vo2max = 45
+        self.age = age
+        self.weight = weight
+        self.vo2max = vo2max
+        self.gender = gender
         # vo2max
         #self.stepsectot = []
 
     def lapcreatorfunc(self):
+        if not self.tp: # If no trackpoints for this lap
+            # Return default values to avoid errors downstream
+            return [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 'Active', 'Manual'], []
 
         # this loop extract from the xml range the needed info for each track point
         for x in range(len(self.tp)):
-            #print(len(self.tp))
-            trackpointkpi = [self.tp[x][0].text,            # Time
-                             self.tp[x][1][0].text,         # Position ==> LatitudeDegrees
-                             self.tp[x][1][1].text,         # Position ==> LongitudeDegrees
-                             self.tp[x][3][0].text,         # HeartRateBpm ==> Value
-                             self.tp[x][4].text,            # Cadence
-                             self.tp[x][2].text,            # DistanceMeters
-                             self.tp[x][5][0][0].text,      # Speed
-                             self.tp[x][5][0][1].text       # Watts
-            ]
+            trackpoint_element = self.tp[x]
+
+            time_text = trackpoint_element.xpath("ts:Time", namespaces=ns)[0].text if trackpoint_element.xpath("ts:Time", namespaces=ns) else None
+            latitude = trackpoint_element.xpath("ts:Position/ts:LatitudeDegrees", namespaces=ns)[0].text if trackpoint_element.xpath("ts:Position/ts:LatitudeDegrees", namespaces=ns) else None
+            longitude = trackpoint_element.xpath("ts:Position/ts:LongitudeDegrees", namespaces=ns)[0].text if trackpoint_element.xpath("ts:Position/ts:LongitudeDegrees", namespaces=ns) else None
+            heart_rate = trackpoint_element.xpath("ts:HeartRateBpm/ts:Value", namespaces=ns)[0].text if trackpoint_element.xpath("ts:HeartRateBpm/ts:Value", namespaces=ns) else None
+            cadence = trackpoint_element.xpath("ts:Cadence", namespaces=ns)[0].text if trackpoint_element.xpath("ts:Cadence", namespaces=ns) else None
+            distance_meters = trackpoint_element.xpath("ts:DistanceMeters", namespaces=ns)[0].text if trackpoint_element.xpath("ts:DistanceMeters", namespaces=ns) else None
+            speed = trackpoint_element.xpath("ts:Extensions/g:TPX/g:Speed", namespaces=ns)[0].text if trackpoint_element.xpath("ts:Extensions/g:TPX/g:Speed", namespaces=ns) else None
+            watts = trackpoint_element.xpath("ts:Extensions/g:TPX/g:Watts", namespaces=ns)[0].text if trackpoint_element.xpath("ts:Extensions/g:TPX/g:Watts", namespaces=ns) else None
+
+            trackpointkpi = [time_text, latitude, longitude, heart_rate, cadence, distance_meters, speed, watts]
             self.Totaltrackpointkpi.append(trackpointkpi)
 
         # Calc of the burned Calories of the body
 
         for x in range(len(self.tp)):
-            # W = (P * t) / 1000
-            # Ecal = (4*W + 0.35 *t) / 4.2
-            # source: http://eodg.atm.ox.ac.uk/user/dudhia/rowing/physics/ergometer.html#section11
+            heart_rate_value = float(heart_rate) if heart_rate is not None else 0.0
 
-            #self.kcalgen = ((4*(float(self.tp[x][5][0][1].text))/1000) + 0.35 ) / 4.2
-
-            #self.kcalgen = (((33* 0.2017) - (78 * 0.09036) + int(self.tp[x][3][0].text))) * (1/60)/ 4.2
-            #self.kcalgen = (-55.0969 + (0.6309 * int(self.tp[x][3][0].text)) + (0.1988 * 78) + (0.2017 * 33)) *( 1/60)/ 4.184
-            #http://braydenwm.com/calburn.htm
-            self.kcalgen = (-95.7735 + (0.271 * self.age) + (0.394 * self.weight) + (0.404 * self.vo2max) + (0.634 * int(self.tp[x][3][0].text))) *(1/60) / 4.184
-            #self.kcalgen = ((0.000904 * (float(self.tp[x][5][0][0].text))**3) + (0.00105*80))
-            #self.kcalgen = 8.5 * 78 * ((1/60)/60)
-            # source = https://www.c2forum.com/viewtopic.php?t=13093
-
-            """
-            Calories
-            (-55.0969 + (0.6309 * Heart Rate) + (0.1988 * Weight) + (0.2017 * Age)) / 4.184
-            https://www.calculatorpro.com/calculator/calories-burned-by-heart-rate/
-            """
-
+            if self.gender == "m":
+                self.kcalgen = (-95.7735 + (0.634 * heart_rate_value) + (0.404 * self.vo2max) + (0.394 * self.weight) + (0.271 * self.age)) *(1/60) / 4.184
+            elif self.gender == "f":
+                self.kcalgen = (-59.3954 + (0.45 * heart_rate_value) + (0.380 * self.vo2max) + (0.103 * self.weight) + (0.274 * self.age)) *(1/60) / 4.184
+            else: # Default to male if gender is unknown or invalid
+                self.kcalgen = (-95.7735 + (0.634 * heart_rate_value) + (0.404 * self.vo2max) + (0.394 * self.weight) + (0.271 * self.age)) *(1/60) / 4.184
             self.kcalgenkomplet.append(self.kcalgen)
 
-            #print(self.kcalgenkomplet)
         self.Kcallap = np.sum(self.kcalgenkomplet,axis=0 )
-        #print("kcal: {}".format(self.Kcallap))
-
-
-        #for x in range(len(self.tp)):
-        #    self.stepssec = (float(self.tp[x][4].text))/60
-        #    self.stepsectot.append(self.stepssec)
-
-        #self.stepslap = np.sum(self.stepsectot,axis=0)
-        #print(self.stepslap)
 
         # KPI calculations
 
-        self.TotaltrackpointkpiNP = np.array(self.Totaltrackpointkpi)
+        self.TotaltrackpointkpiNP = np.atleast_2d(self.Totaltrackpointkpi)
         self.TotaltrackpointkpiNPnotime = np.array(self.TotaltrackpointkpiNP[:,3:])
-        self.TotaltrackpointkpiNPnotime = self.TotaltrackpointkpiNPnotime.astype(np.float)
+        self.TotaltrackpointkpiNPnotime = self.TotaltrackpointkpiNPnotime.astype(float)
         self.meanarraykpi = np.mean(self.TotaltrackpointkpiNPnotime,axis=0)
         self.maxarraykpi = np.max(self.TotaltrackpointkpiNPnotime,axis=0)
-        #print(self.maxarraykpi)
-        #print(self.meanarraykpi)
 
-        # creation of the time diff        #(33, "uint16", self.calories),
+        # creation of the time diff
         self.starttimecal = str(self.TotaltrackpointkpiNP[0,0])
         self.starttimecal = self.starttimecal[11:19]
         self.starttimecal = datetime.strptime(self.starttimecal, "%H:%M:%S")
@@ -159,7 +145,7 @@ def lap_amount(tcx):
     """This part calculates the amount of laps for this run based on 500m sections """
 
     TotalLapDistance = root.xpath("//ts:Lap", namespaces=ns)[0]
-    TotalDistance = int(TotalLapDistance[1].text)
+    TotalDistance = int(float(TotalLapDistance[1].text))
 
     if TotalDistance % 500 == 0:
         AmountLaps = TotalDistance // 500
@@ -168,7 +154,7 @@ def lap_amount(tcx):
 
     return(root,AmountLaps)
 
-def Lap_record_extractor(root,AmountLaps):
+def Lap_record_extractor(root,AmountLaps, age, weight, vo2max, gender):
     lap_total_array = []
     record_total_array = []
     for x in range(AmountLaps):
@@ -176,7 +162,7 @@ def Lap_record_extractor(root,AmountLaps):
         #print(x)
         tp = root.xpath("//ts:Trackpoint[.//ts:DistanceMeters <"+ str(500*(x+1))+"][.//ts:DistanceMeters >="+ str(500*x)+"]", namespaces=ns)
         #print(tp[0][0].text)
-        lap = lapcreator(tp)
+        lap = lapcreator(tp, age, weight, vo2max, gender)
         lap_array, record_array = lap.lapcreatorfunc()
         lap_total_array.append(lap_array)
         record_total_array.append(record_array)
@@ -185,27 +171,59 @@ def Lap_record_extractor(root,AmountLaps):
     return(lap_total_array, record_total_array)
 
 def total_stroke_extractor(root):
-    total_strokes = root.xpath("//g:Steps", namespaces=ns)
-    total_strokes = int(total_strokes[0].text)
-    return(total_strokes)
+    total_strokes_elements = root.xpath("//g:Steps", namespaces=ns)
+    if total_strokes_elements:
+        total_strokes = int(total_strokes_elements[0].text)
+    else:
+        total_strokes = 0
+    return total_strokes
 
-def main(file):
+def main(tcx_file_path, age, weight, vo2max, gender):
 
-    rootxml, Amountlaps = lap_amount(file)
+    rootxml, Amountlaps = lap_amount(tcx_file_path)
     total_strokes = total_stroke_extractor(rootxml)
-    lap_total_array, record_array = Lap_record_extractor(rootxml,Amountlaps)
+    lap_total_array, record_array = Lap_record_extractor(rootxml,Amountlaps, age, weight, vo2max, gender)
     rounds = FITpreparator.record_preperator(record_array)
     laps = FITpreparator.lap_preperator(lap_total_array,record_array)
     print(laps)
     events = FITpreparator.event_preperator(record_array)
     activity = FITpreparator.activity_preparator(record_array)
     session = FITpreparator.session_preparator(lap_total_array, record_array, total_strokes)
+    # Derive output filename
+    base_name = os.path.basename(tcx_file_path)
+    file_name_without_ext = os.path.splitext(base_name)[0]
+    output_fit_file_path = os.path.join(os.path.dirname(tcx_file_path), file_name_without_ext + ".fit")
+
+    output = io.BytesIO() # is the in memory file to store the bytes and interacte with them
+    fileid = ToFit.file_id()
+    ev_start = ToFit.event(events[0]) # Use events[0] for event_start
+    userpro = ToFit.user_profile()
+    sportrow = ToFit.sport()
+    max_heart_rate_row = ToFit.zones_target()
+    ev_stop = ToFit.event(events[1]) # Use events[1] for event_stop
+
+    output.write(ToFit.fit_main_header())
+    output.write(fileid.output_byte())
+    output.write(ev_start.output_byte())
+    output.write(userpro.output_byte())
+    output.write(max_heart_rate_row.output_byte())
+    output.write(sportrow.output_byte())
+    ToFit.heart_rate_zone_creator(ToFit.hear_rate_zones, output) # Assuming default heart rate zones are acceptable or need to be derived
+    ToFit.laps_creator(laps, rounds, output) # Use local 'laps' and 'rounds'
+    output.write(ev_stop.output_byte())
+    output.write(ToFit.session(session).output_byte()[0] + ToFit.session(session).output_byte()[1]) # Use local 'session'
+    output.write(ToFit.activity(activity).output_byte()[0] + ToFit.activity(activity).output_byte()[1]) # Use local 'activity'
+
+    ToFit.check_file_size(output)
+    ToFit.checksum(output)
+    ToFit.export_file(output, output_fit_file_path)
+
     print("done")
 
+
 if __name__ == '__main__':
-    # need to ask for file, for age, for weight and vo2max needed for calorires
-    print("enter pathway of file")
-    file = input()
-    main(file)
-
-
+    if len(sys.argv) > 1:
+        tcx_file_path = sys.argv[1]
+        main(tcx_file_path)
+    else:
+        print("Usage: python3 TCXextractor.py <path_to_tcx_file>")

@@ -8,7 +8,7 @@ def degree_to_semicircle(degree):
     return int(degree_record)
 
 def epoch_calc_sec(Training_datetime):
-    date_format = "%Y-%m-%dT%H:%M:%S.%fZ"
+    date_format = "%Y-%m-%dT%H:%M:%SZ"
     epoch = (datetime.fromisoformat("1989-12-31 00:00:00"))
     Training_datetime_calc = datetime.strptime(Training_datetime, date_format)
     timestamp = int((Training_datetime_calc - epoch).total_seconds())
@@ -16,6 +16,11 @@ def epoch_calc_sec(Training_datetime):
 
 def activity_preparator(record_array_tcx):
     activity_records = record_preperator(record_array_tcx)
+
+    if not activity_records or not activity_records[0] or not activity_records[-1]:
+        # Return default values if no valid records are found
+        return [0, 0, 0] # timestamp, total_timer_time, num_sessions
+
     timestamp = activity_records[-1][-1][0] + 1
     total_timer_time = (activity_records[-1][-1][0] - activity_records[0][0][0]) * 100
     num_sessions = 1
@@ -26,20 +31,32 @@ def activity_preparator(record_array_tcx):
 def session_preparator(lap_total_array_tcx, record_array_tcx,total_strokes_tcx):
     session_records = record_preperator(record_array_tcx)
     session_lap = lap_preperator(lap_total_array_tcx,record_array_tcx)
+
+    # Check if session_records is empty
+    if not session_records or not session_records[0] or not session_records[-1]:
+        # Return a default session array (fill with appropriate default values)
+        # This array should match the expected structure and type of the 'session' list
+        return [0] * 22 # Assuming 'session' list has 22 elements based on its construction below
+
     session_record_no_lap = []
 
     for index, records in enumerate(session_records):
-
         for index2, record in enumerate(records):
             session_record_no_lap.append(record)
+
+    # Handle cases where session_record_no_lap might be empty after filtering
+    if not session_record_no_lap:
+        return [0] * 22 # Return default if no valid records remain
 
     session_mean = np.mean(session_record_no_lap, axis=0)
     session_max = np.max(session_record_no_lap, axis=0)
     session_mean = list(map(int, session_mean))
 
-
-    session_totals = np.sum(session_lap, axis=0)
-
+    # Handle cases where session_lap might be empty
+    if not session_lap:
+        session_totals = [0] * 19 # Assuming session_lap elements are lists of 19
+    else:
+        session_totals = np.sum(session_lap, axis=0)
 
     timestamp = session_records[-1][-1][0] + 1
     Start_time = session_records[0][0][0]
@@ -96,6 +113,9 @@ def lap_preperator(lap_total_array_tcx,record_array_tcx):
     lap_total_array_fit = []
     lap_record_array = record_preperator(record_array_tcx)
     for index, laps in enumerate(lap_total_array_tcx):
+        if not lap_record_array[index]:  # Check if the record array for this lap is empty
+            lap_total_array_fit.append([0]*19) # Append a default empty lap (19 zeros for 19 elements in lap)
+            continue # Skip to the next lap
 
         message_index = index
         timestamp = lap_record_array[index][-1][0]
@@ -155,13 +175,13 @@ def record_preperator(record_array_tcx):
         for index2, record in enumerate(records):
 
             record_fit = [int(epoch_calc_sec(record[0])), # timestamp
-                          int(degree_to_semicircle((record[1]))), # degree lat
-                          int(degree_to_semicircle((record[2]))), # degree long
-                          int(record[3]), # heart reate
-                          int(record[4]), # cadence
-                          int(record[5])*100,   # distance x 100
+                          int(degree_to_semicircle(record[1] if record[1] is not None else 0)), # degree lat
+                          int(degree_to_semicircle(record[2] if record[2] is not None else 0)), # degree long
+                          int(float(record[3]) if record[3] is not None else 0), # heart rate
+                          int(float(record[4]) if record[4] is not None else 0), # cadence
+                          int(float(record[5]) if record[5] is not None else 0)*100,   # distance x 100
                           int(float((record[6]))*1000), # speed x 1000
-                          int(record[7]), #
+                          int(float(record[7]) if record[7] is not None else 0), # watts
                         ]
             record_array_lap_fit.append(record_fit)
 
@@ -171,6 +191,11 @@ def record_preperator(record_array_tcx):
 
 def event_preperator(record_array_tcx):
     lap_record_array = record_preperator(record_array_tcx)
+
+    if not lap_record_array or not lap_record_array[0] or not lap_record_array[-1]:
+        # Return default values if no valid records are found
+        return ([0, 0, 0, 1], [0, 0, 4, 0])
+
     Timestamp_ev_start = lap_record_array[0][0][0]
     Timestamp_ev_stop = lap_record_array[-1][-1][0]
 

@@ -491,8 +491,7 @@ def check_file_size(f):
     print(">>> file size placed into the header with removed 14 bytes of header from the size file")
     return f
 
-def export_file(f):
-    filename = "rowing-session.fit"
+def export_file(f, filename):
     export = open(filename,"w+b")
     #output.seek(0)
     export.write(f.getbuffer())
@@ -543,7 +542,7 @@ def default_test():
 
 ############# create export data in fit format and export it into it. ##################################################
 
-    export_file(output)
+    export_file(output, "result.fit")
 
 if __name__ == '__main__':
     default_test()
