@@ -7,10 +7,30 @@ import FITpreparator
 import ToFit
 
 
-def main(file, age, weight, vo2max, gender):
-    root, amount_laps = TCXextractor.load_tcx(file)
-    total_strokes = TCXextractor.extract_total_strokes(root)
-    lap_total_array, record_array = TCXextractor.extract_lap_records(root, amount_laps, age, weight, vo2max, gender)
+def main(file, age, weight, vo2max, gender, workout=None, warmup=None):
+    total_strokes = None
+
+    if workout:
+        import workout_parser
+        root, _ = TCXextractor.load_tcx(file)
+        total_strokes = TCXextractor.extract_total_strokes(root)
+        all_tp = TCXextractor.extract_all_trackpoints(root)
+        steps = workout_parser.load_workout(workout)
+        if warmup is not None:
+            for step in steps:
+                if step.get('intensity') == 'warmup' and step.get('duration') is None:
+                    step['duration'] = warmup * 60.0
+                    break
+        groups = workout_parser.split_trackpoints_by_steps(all_tp, steps)
+        lap_total_array, record_array = TCXextractor.compute_lap_records(
+            groups, age, weight, vo2max, gender
+        )
+    else:
+        root, amount_laps = TCXextractor.load_tcx(file)
+        total_strokes = TCXextractor.extract_total_strokes(root)
+        lap_total_array, record_array = TCXextractor.extract_lap_records(
+            root, amount_laps, age, weight, vo2max, gender
+        )
 
     rounds = FITpreparator.record_preparator(record_array)
     laps = FITpreparator.lap_preparator(lap_total_array, record_array)
@@ -55,5 +75,7 @@ if __name__ == '__main__':
     parser.add_argument('--weight', type=int, default=78, help="Weight in kg (default: 78)")
     parser.add_argument('--vo2max', type=int, default=45, help="VO2max (default: 45)")
     parser.add_argument('--gender', type=str, choices=['m', 'f'], default='m', help="Gender: m or f (default: m)")
+    parser.add_argument('--workout', default=None, help="Path to a FIT workout file for workout-aware lap splitting")
+    parser.add_argument('--warmup', type=float, default=None, help="Warmup duration in minutes (used with --workout to set the open warmup step; remaining time becomes the cooldown)")
     args = parser.parse_args()
-    main(args.input, args.age, args.weight, args.vo2max, args.gender)
+    main(args.input, args.age, args.weight, args.vo2max, args.gender, workout=args.workout, warmup=args.warmup)
