@@ -9,38 +9,24 @@ ns = {
 
 
 class LapCreator:
-    def __init__(self, tp, age=33, weight=78, vo2max=45, gender="m"):
-        self.tp = tp
+    def __init__(self, trackpoints, age=33, weight=78, vo2max=45, gender="m"):
+        # trackpoints: list of [time, lat, lon, hr, cad, dist, spd, watt]
+        self.trackpoints = trackpoints
         self.age = age
         self.weight = weight
         self.vo2max = vo2max
         self.gender = gender
         self.kcal_values = []
-        self.trackpoints = []
 
     def build(self):
-        if not self.tp:
+        if not self.trackpoints:
             return [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 'Active', 'Manual'], []
 
-        heart_rate = None
-        for trackpoint_element in self.tp:
-            def _get(xpath):
-                nodes = trackpoint_element.xpath(xpath, namespaces=ns)
-                return nodes[0].text if nodes else None
-
-            time_text = _get("ts:Time")
-            latitude = _get("ts:Position/ts:LatitudeDegrees")
-            longitude = _get("ts:Position/ts:LongitudeDegrees")
-            heart_rate = _get("ts:HeartRateBpm/ts:Value")
-            cadence = _get("ts:Cadence")
-            distance_meters = _get("ts:DistanceMeters")
-            speed = _get("ts:Extensions/g:TPX/g:Speed")
-            watts = _get("ts:Extensions/g:TPX/g:Watts")
-            self.trackpoints.append([time_text, latitude, longitude, heart_rate, cadence, distance_meters, speed, watts])
-
         # Calorie calculation uses the heart rate from the last trackpoint for all intervals
-        heart_rate_value = float(heart_rate) if heart_rate is not None else 0.0
-        for _ in self.tp:
+        heart_rate_value = (
+            float(self.trackpoints[-1][3]) if self.trackpoints[-1][3] is not None else 0.0
+        )
+        for _ in self.trackpoints:
             if self.gender == "f":
                 kcal = (-59.3954 + (0.45 * heart_rate_value) + (0.380 * self.vo2max) + (0.103 * self.weight) + (0.274 * self.age)) * (1 / 60) / 4.184
             else:
@@ -88,15 +74,56 @@ def load_tcx(tcx):
     return root, amount_laps
 
 
+def extract_all_trackpoints(root):
+    """Extract every trackpoint from the TCX tree as a flat list of field lists.
+
+    Each entry is [time, lat, lon, hr, cad, dist, spd, watt] (strings or None).
+    """
+    elements = root.xpath("//ts:Trackpoint", namespaces=ns)
+    result = []
+    for el in elements:
+        def _get(xpath, _el=el):
+            nodes = _el.xpath(xpath, namespaces=ns)
+            return nodes[0].text if nodes else None
+
+        result.append([
+            _get("ts:Time"),
+            _get("ts:Position/ts:LatitudeDegrees"),
+            _get("ts:Position/ts:LongitudeDegrees"),
+            _get("ts:HeartRateBpm/ts:Value"),
+            _get("ts:Cadence"),
+            _get("ts:DistanceMeters"),
+            _get("ts:Extensions/g:TPX/g:Speed"),
+            _get("ts:Extensions/g:TPX/g:Watts"),
+        ])
+    return result
+
+
 def extract_lap_records(root, amount_laps, age, weight, vo2max, gender):
+    all_tp = extract_all_trackpoints(root)
     lap_total_array = []
     record_total_array = []
     for i in range(amount_laps):
-        tp = root.xpath(
-            f"//ts:Trackpoint[.//ts:DistanceMeters <{500 * (i + 1)}][.//ts:DistanceMeters >={500 * i}]",
-            namespaces=ns,
-        )
-        lap = LapCreator(tp, age, weight, vo2max, gender)
+        group = [
+            tp for tp in all_tp
+            if tp[5] is not None and 500 * i <= float(tp[5]) < 500 * (i + 1)
+        ]
+        lap = LapCreator(group, age, weight, vo2max, gender)
+        lap_array, record_array = lap.build()
+        lap_total_array.append(lap_array)
+        record_total_array.append(record_array)
+    return lap_total_array, record_total_array
+
+
+def compute_lap_records(groups, age, weight, vo2max, gender):
+    """Build lap and record arrays from pre-split trackpoint groups.
+
+    Used by the workout-aware path in tcx2fit.py.
+    """
+    lap_total_array = []
+    record_total_array = []
+    for group in groups:
+        lap = LapCreator(group, age, weight, vo2max, gender)
         lap_array, record_array = lap.build()
         lap_total_array.append(lap_array)
         record_total_array.append(record_array)
