@@ -3,207 +3,142 @@ import numpy as np
 
 
 def degree_to_semicircle(degree):
-    degree = float(degree)
-    degree_record = degree * (2**31 / 180)
-    return int(degree_record)
+    return int(float(degree) * (2**31 / 180))
 
-def epoch_calc_sec(Training_datetime):
-    date_format = "%Y-%m-%dT%H:%M:%SZ"
-    epoch = (datetime.fromisoformat("1989-12-31 00:00:00"))
-    Training_datetime_calc = datetime.strptime(Training_datetime, date_format)
-    timestamp = int((Training_datetime_calc - epoch).total_seconds())
-    return timestamp
+
+def epoch_calc_sec(training_datetime):
+    epoch = datetime.fromisoformat("1989-12-31 00:00:00")
+    dt = datetime.strptime(training_datetime, "%Y-%m-%dT%H:%M:%SZ")
+    return int((dt - epoch).total_seconds())
+
 
 def activity_preparator(record_array_tcx):
-    activity_records = record_preperator(record_array_tcx)
+    records = record_preparator(record_array_tcx)
 
-    if not activity_records or not activity_records[0] or not activity_records[-1]:
-        # Return default values if no valid records are found
-        return [0, 0, 0] # timestamp, total_timer_time, num_sessions
+    if not records or not records[0] or not records[-1]:
+        return [0, 0, 0]
 
-    timestamp = activity_records[-1][-1][0] + 1
-    total_timer_time = (activity_records[-1][-1][0] - activity_records[0][0][0]) * 100
-    num_sessions = 1
+    timestamp = records[-1][-1][0] + 1
+    total_timer_time = (records[-1][-1][0] - records[0][0][0]) * 100
+    return [timestamp, total_timer_time, 1]
 
-    activity_array_fit = [timestamp,total_timer_time,num_sessions]
-    return activity_array_fit
 
-def session_preparator(lap_total_array_tcx, record_array_tcx,total_strokes_tcx):
-    session_records = record_preperator(record_array_tcx)
-    session_lap = lap_preperator(lap_total_array_tcx,record_array_tcx)
+def session_preparator(lap_total_array_tcx, record_array_tcx, total_strokes_tcx):
+    session_records = record_preparator(record_array_tcx)
+    session_lap = lap_preparator(lap_total_array_tcx, record_array_tcx)
 
-    # Check if session_records is empty
     if not session_records or not session_records[0] or not session_records[-1]:
-        # Return a default session array (fill with appropriate default values)
-        # This array should match the expected structure and type of the 'session' list
-        return [0] * 22 # Assuming 'session' list has 22 elements based on its construction below
+        return [0] * 22
 
-    session_record_no_lap = []
+    flat_records = [record for lap in session_records for record in lap]
 
-    for index, records in enumerate(session_records):
-        for index2, record in enumerate(records):
-            session_record_no_lap.append(record)
+    if not flat_records:
+        return [0] * 22
 
-    # Handle cases where session_record_no_lap might be empty after filtering
-    if not session_record_no_lap:
-        return [0] * 22 # Return default if no valid records remain
-
-    session_mean = np.mean(session_record_no_lap, axis=0)
-    session_max = np.max(session_record_no_lap, axis=0)
-    session_mean = list(map(int, session_mean))
-
-    # Handle cases where session_lap might be empty
-    if not session_lap:
-        session_totals = [0] * 19 # Assuming session_lap elements are lists of 19
-    else:
-        session_totals = np.sum(session_lap, axis=0)
+    session_mean = list(map(int, np.mean(flat_records, axis=0)))
+    session_max = np.max(flat_records, axis=0)
+    session_totals = np.sum(session_lap, axis=0) if session_lap else [0] * 19
 
     timestamp = session_records[-1][-1][0] + 1
-    Start_time = session_records[0][0][0]
+    start_time = session_records[0][0][0]
     start_position_lat = session_records[0][0][1]
     start_position_long = session_records[0][0][2]
-    sport = 4
-    sub_sport = 14
-    total_elasped_time = (session_records[-1][-1][0] - session_records[0][0][0]) * 1000
-    total_timer_time = total_elasped_time
+    total_elapsed_time = (session_records[-1][-1][0] - session_records[0][0][0]) * 1000
     total_distance = session_records[-1][-1][5] - session_records[0][0][5]
-    total_calories = session_totals[10]
-    avg_speed = session_mean[6]
-    max_speed = session_max[6]
-    avg_heart_rate = session_mean[3]
-    max_heart_rate = session_max[3]
-    avg_cadence = session_mean[4]
-    max_cadence = session_max[4]
-    avg_power = session_mean[7]
-    max_power = session_max[7]
-    num_lap = len(session_lap)
-    total_work = session_mean[7] * ((session_records[-1][-1][0] - session_records[0][0][0]))
-    min_heart_rate = 60
-    stroke_count = total_strokes_tcx
 
-    session= [timestamp,
-              Start_time,
-              start_position_lat,
-              start_position_long,
-              sport,
-              sub_sport,
-              total_elasped_time,
-              total_timer_time,
-              total_distance,
-              total_calories,
-              avg_speed,
-              max_speed,
-              avg_heart_rate,
-              max_heart_rate,
-              avg_cadence,
-              max_cadence,
-              avg_power,
-              max_power,
-              num_lap,
-              total_work,
-              min_heart_rate,
-              stroke_count
-
+    session = [
+        timestamp,
+        start_time,
+        start_position_lat,
+        start_position_long,
+        4,                          # sport: Fitness Equipment
+        14,                         # sub_sport: Indoor Rowing
+        total_elapsed_time,
+        total_elapsed_time,         # total_timer_time == total_elapsed_time
+        total_distance,
+        session_totals[10],         # total_calories (sum across laps)
+        session_mean[6],            # avg_speed
+        session_max[6],             # max_speed
+        session_mean[3],            # avg_heart_rate
+        session_max[3],             # max_heart_rate
+        session_mean[4],            # avg_cadence
+        session_max[4],             # max_cadence
+        session_mean[7],            # avg_power
+        session_max[7],             # max_power
+        len(session_lap),           # num_lap
+        session_mean[7] * (session_records[-1][-1][0] - session_records[0][0][0]),  # total_work
+        60,                         # min_heart_rate
+        total_strokes_tcx,
     ]
-    session = list(map(int, session))
-    return(session)
+    return list(map(int, session))
 
-def lap_preperator(lap_total_array_tcx,record_array_tcx):
-    # todo: create a function to clean and transform all needed data for the fit to get it fit class ready for lap and records
+
+def lap_preparator(lap_total_array_tcx, record_array_tcx):
+    lap_records = record_preparator(record_array_tcx)
     lap_total_array_fit = []
-    lap_record_array = record_preperator(record_array_tcx)
+
     for index, laps in enumerate(lap_total_array_tcx):
-        if not lap_record_array[index]:  # Check if the record array for this lap is empty
-            lap_total_array_fit.append([0]*19) # Append a default empty lap (19 zeros for 19 elements in lap)
-            continue # Skip to the next lap
+        if not lap_records[index]:
+            lap_total_array_fit.append([0] * 19)
+            continue
 
-        message_index = index
-        timestamp = lap_record_array[index][-1][0]
-        if index == 0:
-            start_time = lap_record_array[index][0][0]
-        else:
-            start_time = lap_record_array[index][0][0] + 1
-        start_position_lat = lap_record_array[index][0][1]
-        start_position_long = lap_record_array[index][0][2]
-        end_position_lat = lap_record_array[index][-1][1]
-        end_postition_long = lap_record_array[index][-1][2]
-        total_elasped_time = (lap_record_array[index][-1][0] - lap_record_array[index][0][0]) * 1000
-        total_timer_time = total_elasped_time
-        total_distance = lap_total_array_tcx[index][2] * 100
-        total_calories = lap_total_array_tcx[index][3]
-        avg_speed = lap_total_array_tcx[index][4]*1000
-        max_speed = lap_total_array_tcx[index][5]*1000
-        avg_heart_rate = lap_total_array_tcx[index][6]
-        max_heart_rate = lap_total_array_tcx[index][7]
-        avg_cadence = lap_total_array_tcx[index][8]
-        max_cadence = lap_total_array_tcx[index][9]
-        avg_power = lap_total_array_tcx[index][10]
-        max_power = lap_total_array_tcx[index][11]
+        timestamp = lap_records[index][-1][0]
+        start_time = lap_records[index][0][0] if index == 0 else lap_records[index][0][0] + 1
 
-        lap = [message_index,
-               timestamp,
-               start_time,
-               start_position_lat,
-               start_position_long,
-               end_position_lat,
-               end_postition_long,
-               total_elasped_time,
-               total_timer_time,
-               total_distance,
-               total_calories,
-               avg_speed,
-               max_speed,
-               avg_heart_rate,
-               max_heart_rate,
-               avg_cadence,
-               max_cadence,
-               avg_power,
-               max_power,
+        lap = [
+            index,                                          # message_index
+            timestamp,
+            start_time,
+            lap_records[index][0][1],                       # start_position_lat
+            lap_records[index][0][2],                       # start_position_long
+            lap_records[index][-1][1],                      # end_position_lat
+            lap_records[index][-1][2],                      # end_position_long
+            (lap_records[index][-1][0] - lap_records[index][0][0]) * 1000,  # total_elapsed_time
+            (lap_records[index][-1][0] - lap_records[index][0][0]) * 1000,  # total_timer_time
+            lap_total_array_tcx[index][2] * 100,            # total_distance
+            lap_total_array_tcx[index][3],                  # total_calories
+            lap_total_array_tcx[index][4] * 1000,           # avg_speed
+            lap_total_array_tcx[index][5] * 1000,           # max_speed
+            lap_total_array_tcx[index][6],                  # avg_heart_rate
+            lap_total_array_tcx[index][7],                  # max_heart_rate
+            lap_total_array_tcx[index][8],                  # avg_cadence
+            lap_total_array_tcx[index][9],                  # max_cadence
+            lap_total_array_tcx[index][10],                 # avg_power
+            lap_total_array_tcx[index][11],                 # max_power
         ]
+        lap_total_array_fit.append(list(map(int, lap)))
 
-        lap = list(map(int, lap))
+    return lap_total_array_fit
 
-        lap_total_array_fit.append(lap)
-    return (lap_total_array_fit)
 
-def record_preperator(record_array_tcx):
+def record_preparator(record_array_tcx):
     records_array_fit = []
 
-    # todo: create function to clean the tracking point into record format e.g gps and time with epoch
-    for index, records in enumerate(record_array_tcx):
+    for records in record_array_tcx:
         record_array_lap_fit = []
-        for index2, record in enumerate(records):
-
-            record_fit = [int(epoch_calc_sec(record[0])), # timestamp
-                          int(degree_to_semicircle(record[1] if record[1] is not None else 0)), # degree lat
-                          int(degree_to_semicircle(record[2] if record[2] is not None else 0)), # degree long
-                          int(float(record[3]) if record[3] is not None else 0), # heart rate
-                          int(float(record[4]) if record[4] is not None else 0), # cadence
-                          int(float(record[5]) if record[5] is not None else 0)*100,   # distance x 100
-                          int(float((record[6]))*1000), # speed x 1000
-                          int(float(record[7]) if record[7] is not None else 0), # watts
-                        ]
+        for record in records:
+            record_fit = [
+                int(epoch_calc_sec(record[0])),
+                int(degree_to_semicircle(record[1] if record[1] is not None else 0)),
+                int(degree_to_semicircle(record[2] if record[2] is not None else 0)),
+                int(float(record[3]) if record[3] is not None else 0),
+                int(float(record[4]) if record[4] is not None else 0),
+                int(float(record[5]) if record[5] is not None else 0) * 100,
+                int(float(record[6]) * 1000),
+                int(float(record[7]) if record[7] is not None else 0),
+            ]
             record_array_lap_fit.append(record_fit)
-
         records_array_fit.append(record_array_lap_fit)
 
     return records_array_fit
 
-def event_preperator(record_array_tcx):
-    lap_record_array = record_preperator(record_array_tcx)
 
-    if not lap_record_array or not lap_record_array[0] or not lap_record_array[-1]:
-        # Return default values if no valid records are found
+def event_preparator(record_array_tcx):
+    records = record_preparator(record_array_tcx)
+
+    if not records or not records[0] or not records[-1]:
         return ([0, 0, 0, 1], [0, 0, 4, 0])
 
-    Timestamp_ev_start = lap_record_array[0][0][0]
-    Timestamp_ev_stop = lap_record_array[-1][-1][0]
-
-    event_start = [ Timestamp_ev_start, 0, 0, 1]
-    event_stop = [Timestamp_ev_stop, 0, 4, 0]
-
-    return(event_start,event_stop)
-
-
-if __name__ == '__main__':
-    print("done")
+    event_start = [records[0][0][0], 0, 0, 1]
+    event_stop = [records[-1][-1][0], 0, 4, 0]
+    return event_start, event_stop
