@@ -14,21 +14,19 @@ def epoch_calc_sec(training_datetime):
 
 def activity_preparator(record_array_tcx):
     records = record_preparator(record_array_tcx)
+    flat_records = [r for lap in records for r in lap]
 
-    if not records or not records[0] or not records[-1]:
+    if not flat_records:
         return [0, 0, 0]
 
-    timestamp = records[-1][-1][0] + 1
-    total_timer_time = (records[-1][-1][0] - records[0][0][0]) * 100
+    timestamp = flat_records[-1][0] + 1
+    total_timer_time = (flat_records[-1][0] - flat_records[0][0]) * 100
     return [timestamp, total_timer_time, 1]
 
 
 def session_preparator(lap_total_array_tcx, record_array_tcx, total_strokes_tcx):
     session_records = record_preparator(record_array_tcx)
     session_lap = lap_preparator(lap_total_array_tcx, record_array_tcx)
-
-    if not session_records or not session_records[0] or not session_records[-1]:
-        return [0] * 22
 
     flat_records = [record for lap in session_records for record in lap]
 
@@ -39,12 +37,12 @@ def session_preparator(lap_total_array_tcx, record_array_tcx, total_strokes_tcx)
     session_max = np.max(flat_records, axis=0)
     session_totals = np.sum(session_lap, axis=0) if session_lap else [0] * 19
 
-    timestamp = session_records[-1][-1][0] + 1
-    start_time = session_records[0][0][0]
-    start_position_lat = session_records[0][0][1]
-    start_position_long = session_records[0][0][2]
-    total_elapsed_time = (session_records[-1][-1][0] - session_records[0][0][0]) * 1000
-    total_distance = session_records[-1][-1][5] - session_records[0][0][5]
+    timestamp = flat_records[-1][0] + 1
+    start_time = flat_records[0][0]
+    start_position_lat = flat_records[0][1]
+    start_position_long = flat_records[0][2]
+    total_elapsed_time = (flat_records[-1][0] - flat_records[0][0]) * 1000
+    total_distance = flat_records[-1][5] - flat_records[0][5]
 
     session = [
         timestamp,
@@ -66,7 +64,7 @@ def session_preparator(lap_total_array_tcx, record_array_tcx, total_strokes_tcx)
         session_mean[7],            # avg_power
         session_max[7],             # max_power
         len(session_lap),           # num_lap
-        session_mean[7] * (session_records[-1][-1][0] - session_records[0][0][0]),  # total_work
+        session_mean[7] * (flat_records[-1][0] - flat_records[0][0]),  # total_work
         60,                         # min_heart_rate
         total_strokes_tcx,
     ]
@@ -135,10 +133,11 @@ def record_preparator(record_array_tcx):
 
 def event_preparator(record_array_tcx):
     records = record_preparator(record_array_tcx)
+    flat_records = [r for lap in records for r in lap]
 
-    if not records or not records[0] or not records[-1]:
+    if not flat_records:
         return ([0, 0, 0, 1], [0, 0, 4, 0])
 
-    event_start = [records[0][0][0], 0, 0, 1]
-    event_stop = [records[-1][-1][0], 0, 4, 0]
+    event_start = [flat_records[0][0], 0, 0, 1]
+    event_stop = [flat_records[-1][0], 0, 4, 0]
     return event_start, event_stop
