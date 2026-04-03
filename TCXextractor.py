@@ -33,7 +33,7 @@ class LapCreator:
                 kcal = (-95.7735 + (0.634 * heart_rate_value) + (0.404 * self.vo2max) + (0.394 * self.weight) + (0.271 * self.age)) * (1 / 60) / 4.184
             self.kcal_values.append(kcal)
 
-        kcal_lap = np.sum(self.kcal_values, axis=0)
+        kcal_lap = max(0.0, np.sum(self.kcal_values, axis=0))
 
         data = np.atleast_2d(self.trackpoints)
         numeric = np.array(data[:, 3:]).astype(float)
